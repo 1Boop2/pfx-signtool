@@ -1,0 +1,63 @@
+name: Sign artifacts (example)
+
+on:
+  workflow_dispatch:
+  release:
+    types: [published]
+
+jobs:
+  sign:
+    runs-on: windows-latest
+    env:
+      SIGN_PFX_PASS: ${{ secrets.PFX_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # Пример: тут вы собираете свои бинарники в dist\ (удалите шаг и подставьте сборку)
+      - name: Build (example placeholder)
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path dist -Force | Out-Null
+          Set-Content -Path dist\MyApp.exe -Value "dummy"
+
+      - name: Restore PFX from secret
+        shell: pwsh
+        run: |
+          $bytes = [Convert]::FromBase64String("${{ secrets.PFX_BASE64 }}")
+          [IO.File]::WriteAllBytes("$env:RUNNER_TEMP\signcert.pfx", $bytes)
+
+      - name: Find signtool (optional)
+        id: find_st
+        shell: pwsh
+        run: |
+          $st = (Get-Command signtool.exe -ErrorAction SilentlyContinue).Source
+          if (-not $st) { $st = "" }
+          "signtool=$st" >> $env:GITHUB_OUTPUT
+
+      - name: Sign
+        shell: pwsh
+        run: |
+          $st = "${{ steps.find_st.outputs.signtool }}"
+          $signtoolArg = ""
+          if ($st) { $signtoolArg = "--signtool `"$st`"" }
+          python sign_with_pfx.py `
+            $signtoolArg `
+            --pfx "$env:RUNNER_TEMP\signcert.pfx" `
+            --pfx-pass-env SIGN_PFX_PASS `
+            --input dist\ `
+            --recursive `
+            --verify `
+            --dual `
+            --t http://timestamp.digicert.com `
+            --tr http://timestamp.digicert.com
+
+      - name: Upload signed artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: signed-dist
+          path: dist/**

@@ -1,0 +1,39 @@
+name: CI (what-if)
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  what-if:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Create dummy inputs
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path tests -Force | Out-Null
+          # фиктивные файлы (содержимое неважно для --what-if)
+          Set-Content -Path tests\dummy.pfx -Value "dummy"
+          Set-Content -Path tests\Hello.exe -Value "dummy"
+          # пароль в env
+          echo "SIGN_PFX_PASS=dummy-pass" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Dry-run (no real signing)
+        shell: pwsh
+        run: >
+          python sign_with_pfx.py
+          --signtool "C:\Windows\System32\cmd.exe"
+          --pfx tests\dummy.pfx
+          --pfx-pass-env SIGN_PFX_PASS
+          --input tests\Hello.exe
+          --replace-existing
+          --what-if
+          --log-level DEBUG
